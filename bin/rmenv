@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# rmenv <name> -- delete a per-project env and unregister its kernel.
+
+set -euo pipefail
+
+VENV_ROOT=${VENV_ROOT:-/opt/venvs}
+
+if [[ $# -ne 1 ]]; then
+    echo "usage: rmenv <name>" >&2
+    exit 64
+fi
+
+NAME=$1
+VENV="$VENV_ROOT/$NAME"
+
+if [[ ! -d $VENV ]]; then
+    echo "rmenv: no such env: $VENV" >&2
+    exit 1
+fi
+
+jupyter kernelspec remove -f "$NAME" 2>/dev/null || true
+rm -rf "$VENV"
+
+echo "rmenv: removed env '$NAME' and its kernel."

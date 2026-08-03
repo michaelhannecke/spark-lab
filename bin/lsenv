@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# lsenv -- list per-project envs and their on-disk size.
+
+set -euo pipefail
+
+VENV_ROOT=${VENV_ROOT:-/opt/venvs}
+
+if [[ ! -d $VENV_ROOT ]] || [[ -z $(ls -A "$VENV_ROOT" 2>/dev/null) ]]; then
+    echo "no envs yet -- create one with: newenv <name> [packages...]"
+    exit 0
+fi
+
+printf '%-24s %10s  %s\n' NAME SIZE PYTHON
+for venv in "$VENV_ROOT"/*/; do
+    [[ -x "${venv}bin/python" ]] || continue
+    name=$(basename "$venv")
+    size=$(du -sh "$venv" 2>/dev/null | cut -f1)
+    ver=$("${venv}bin/python" --version 2>&1)
+    printf '%-24s %10s  %s\n' "$name" "$size" "$ver"
+done

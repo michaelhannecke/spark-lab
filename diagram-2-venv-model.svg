@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1240" height="720" viewBox="0 0 1240 720" font-family="DejaVu Sans, system-ui, -apple-system, Segoe UI, sans-serif">
+  <rect width="1240" height="720" fill="#fcfcfb"/>
+
+  <text x="48" y="56" font-size="27" font-weight="700" fill="#0b0b0b">The second boundary: one env per experiment</text>
+  <text x="48" y="84" font-size="15.5" fill="#52514e">Project envs inherit the heavy stack instead of copying it. A fresh env costs megabytes, not gigabytes.</text>
+
+  <defs>
+    <marker id="up-blue" markerWidth="9" markerHeight="9" refX="7.5" refY="4.5" orient="auto">
+      <path d="M0,0 L9,4.5 L0,9 z" fill="#2a78d6"/>
+    </marker>
+  </defs>
+
+  <!-- IMAGE LAYER -->
+  <rect x="48" y="122" width="1144" height="128" rx="10" fill="#eef4fd" stroke="#2a78d6" stroke-width="2.5"/>
+  <text x="72" y="152" font-size="15.5" font-weight="700" fill="#0b0b0b">Image site-packages &#8212; immutable, shared by every env</text>
+  <text x="72" y="176" font-size="13" fill="#52514e" font-family="DejaVu Sans Mono, monospace">/usr/local/lib/python3.12/dist-packages</text>
+
+  <rect x="72" y="192" width="150" height="34" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="147" y="214" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle">torch (sm_121)</text>
+  <rect x="234" y="192" width="110" height="34" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="289" y="214" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle">CUDA 13</text>
+  <rect x="356" y="192" width="100" height="34" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="406" y="214" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle">cuDNN</text>
+  <rect x="468" y="192" width="100" height="34" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="518" y="214" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle">NCCL</text>
+  <rect x="580" y="192" width="130" height="34" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="645" y="214" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle">JupyterLab</text>
+  <rect x="722" y="192" width="80" height="34" rx="6" fill="#ffffff" stroke="#2a78d6" stroke-width="1.5"/>
+  <text x="762" y="214" font-size="13" font-weight="700" fill="#0b0b0b" text-anchor="middle">uv</text>
+  <text x="822" y="214" font-size="12" fill="#898781">~3 GB of arch-specific wheels you never want to rebuild</text>
+
+  <!-- inheritance arrows -->
+  <path d="M212 400 L 212 262" stroke="#2a78d6" stroke-width="2.5" stroke-dasharray="6 4" fill="none" marker-end="url(#up-blue)"/>
+  <path d="M620 400 L 620 262" stroke="#2a78d6" stroke-width="2.5" stroke-dasharray="6 4" fill="none" marker-end="url(#up-blue)"/>
+  <path d="M1028 400 L 1028 262" stroke="#2a78d6" stroke-width="2.5" stroke-dasharray="6 4" fill="none" marker-end="url(#up-blue)"/>
+  <rect x="470" y="312" width="300" height="26" rx="4" fill="#fcfcfb"/>
+  <text x="620" y="331" font-size="13" font-weight="700" fill="#2a78d6" text-anchor="middle">uv venv --system-site-packages</text>
+
+  <!-- VENV 1 -->
+  <rect x="48" y="400" width="328" height="184" rx="10" fill="#ffffff" stroke="#c3c2b7" stroke-width="1.5"/>
+  <text x="72" y="430" font-size="15" font-weight="700" fill="#0b0b0b" font-family="DejaVu Sans Mono, monospace">sae-probing</text>
+  <text x="72" y="452" font-size="12.5" fill="#898781" font-family="DejaVu Sans Mono, monospace">/opt/venvs/sae-probing</text>
+  <rect x="72" y="466" width="280" height="1" fill="#e1e0d9"/>
+  <text x="72" y="490" font-size="13" fill="#52514e">+ transformer-lens</text>
+  <text x="72" y="512" font-size="13" fill="#52514e">+ torch-tb-profiler</text>
+  <text x="72" y="534" font-size="13" fill="#52514e">+ ipykernel</text>
+  <text x="72" y="566" font-size="12.5" font-weight="700" fill="#1baf7a">8 MB on disk</text>
+
+  <!-- VENV 2 -->
+  <rect x="456" y="400" width="328" height="184" rx="10" fill="#ffffff" stroke="#c3c2b7" stroke-width="1.5"/>
+  <text x="480" y="430" font-size="15" font-weight="700" fill="#0b0b0b" font-family="DejaVu Sans Mono, monospace">diffusion-test</text>
+  <text x="480" y="452" font-size="12.5" fill="#898781" font-family="DejaVu Sans Mono, monospace">/opt/venvs/diffusion-test</text>
+  <rect x="480" y="466" width="280" height="1" fill="#e1e0d9"/>
+  <text x="480" y="490" font-size="13" fill="#52514e">+ diffusers</text>
+  <text x="480" y="512" font-size="13" fill="#52514e">+ accelerate (pinned, conflicting)</text>
+  <text x="480" y="534" font-size="13" fill="#52514e">+ ipykernel</text>
+  <text x="480" y="566" font-size="12.5" font-weight="700" fill="#1baf7a">31 MB on disk</text>
+
+  <!-- VENV 3 - broken -->
+  <rect x="864" y="400" width="328" height="184" rx="10" fill="#fdecec" stroke="#e34948" stroke-width="2"/>
+  <text x="888" y="430" font-size="15" font-weight="700" fill="#0b0b0b" font-family="DejaVu Sans Mono, monospace">scratch</text>
+  <text x="888" y="452" font-size="12.5" fill="#898781" font-family="DejaVu Sans Mono, monospace">/opt/venvs/scratch</text>
+  <rect x="888" y="466" width="280" height="1" fill="#e1e0d9"/>
+  <text x="888" y="490" font-size="13" fill="#52514e">+ that one package from GitHub</text>
+  <text x="888" y="512" font-size="13" fill="#52514e">+ its incompatible CUDA wheel</text>
+  <text x="888" y="534" font-size="13" font-weight="700" fill="#e34948">ImportError on every cell</text>
+  <text x="888" y="566" font-size="12.5" font-weight="700" fill="#e34948">rmenv scratch &#8594; gone in 2 s</text>
+
+  <!-- footer -->
+  <rect x="48" y="616" width="1144" height="1" fill="#e1e0d9"/>
+  <text x="48" y="650" font-size="13.5" fill="#52514e">A broken env is a leaf, never a root. Nothing a project env installs can reach the image layer, the container, or DGX OS &#8212;</text>
+  <text x="48" y="674" font-size="13.5" fill="#52514e">so the recovery for a poisoned dependency tree is one command, not a rebuild of the box.</text>
+  <text x="48" y="702" font-size="12.5" fill="#898781">Caveat: inheritance is one-way. A project env can shadow an image package by installing its own copy, but it cannot un-break the image.</text>
+</svg>

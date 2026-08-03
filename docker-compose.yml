@@ -1,0 +1,80 @@
+name: spark-lab
+
+services:
+  lab:
+    build:
+      context: .
+      args:
+        BASE_IMAGE: ${BASE_IMAGE:-nvcr.io/nvidia/pytorch:25.10-py3}
+        DEV_UID: ${DEV_UID:-1000}
+        DEV_GID: ${DEV_GID:-1000}
+    image: spark-lab:local
+    container_name: spark-lab
+    hostname: spark-lab
+
+    # Survives reboots and daemon restarts. Note this also means the container's
+    # writable layer persists -- an ad-hoc `pip install` inside a *running*
+    # container survives a reboot, and only dies on `compose down`/`up --build`.
+    restart: unless-stopped
+    init: true
+
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # If your Compose is older than v2.30 and the block above misbehaves,
+    # replace it with:  runtime: nvidia
+
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      JUPYTER_TOKEN: ${JUPYTER_TOKEN:?set JUPYTER_TOKEN in .env}
+      # GB10 has unified LPDDR5X shared with the GPU. Keep allocator churn down
+      # on long notebook sessions where you reload models repeatedly.
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+
+    ports:
+      # BIND_ADDR=127.0.0.1 -> SSH-tunnel only (safest)
+      # BIND_ADDR=0.0.0.0   -> reachable from the Mac Studio over the LAN
+      - "${BIND_ADDR:-127.0.0.1}:${HOST_PORT:-8888}:8888"
+
+    volumes:
+      # Your actual notebooks + data live on the host. Everything else is
+      # disposable container state.
+      - ./notebooks:/workspace
+      # Per-project venvs. Persist across rebuilds so you don't redo `newenv`.
+      - venvs:/opt/venvs
+      # Registered kernelspecs + JupyterLab UI state (layout, settings).
+      - jupyter-data:/opt/jupyter-data
+      - jupyter-config:/opt/jupyter-config
+      # pip / uv / HuggingFace / torch.hub caches. Big, and worth keeping.
+      - caches:/opt/caches
+
+    # DataLoader workers use /dev/shm. The 64 MB default will bite you.
+    shm_size: "16gb"
+
+    ulimits:
+      memlock: -1
+      stack: 67108864
+
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8888/api/status"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 120s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  venvs:
+  jupyter-data:
+  jupyter-config:
+  caches:

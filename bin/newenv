@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# newenv <name> [pip-package ...]
+#
+# Create a throwaway per-project Python env inside the container and register it
+# as a JupyterLab kernel. Inherits the image's torch/CUDA stack via
+# --system-site-packages, so you are NOT re-downloading a 3 GB torch wheel that
+# would probably be built for the wrong arch anyway.
+
+set -euo pipefail
+
+VENV_ROOT=${VENV_ROOT:-/opt/venvs}
+
+if [[ $# -lt 1 ]]; then
+    echo "usage: newenv <name> [pip-package ...]" >&2
+    exit 64
+fi
+
+NAME=$1
+shift
+
+if [[ ! $NAME =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
+    echo "newenv: invalid env name '$NAME'" >&2
+    exit 64
+fi
+
+VENV="$VENV_ROOT/$NAME"
+
+if [[ -d $VENV ]]; then
+    echo "newenv: reusing existing env $VENV"
+else
+    echo "newenv: creating $VENV (system site-packages inherited)"
+    uv venv --system-site-packages --python "$(command -v python3)" "$VENV"
+fi
+
+export VIRTUAL_ENV="$VENV"
+uv pip install --quiet ipykernel "$@"
+
+"$VENV/bin/python" -m ipykernel install \
+    --user \
+    --name "$NAME" \
+    --display-name "Python ($NAME)"
+
+echo
+echo "newenv: kernel '$NAME' registered."
+echo "        Reload the JupyterLab tab, then pick 'Python ($NAME)' as the kernel."
+echo "        Install more into it from a notebook cell with:"
+echo "          !$VENV/bin/python -m pip install <pkg>"
