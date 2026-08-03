@@ -29,11 +29,28 @@ if [[ -d $VENV ]]; then
     echo "newenv: reusing existing env $VENV"
 else
     echo "newenv: creating $VENV (system site-packages inherited)"
-    uv venv --system-site-packages --python "$(command -v python3)" "$VENV"
+    # --seed puts pip inside the venv. We need pip specifically -- see below.
+    uv venv --seed --system-site-packages --python "$(command -v python3)" "$VENV"
 fi
 
-export VIRTUAL_ENV="$VENV"
-uv pip install --quiet ipykernel "$@"
+# IMPORTANT: install with the venv's own pip, NOT `uv pip install`.
+#
+# `uv venv --system-site-packages` makes the image's torch/CUDA stack VISIBLE at
+# runtime, but `uv pip install` does not consider inherited system site-packages
+# when RESOLVING dependencies -- it plans against the venv's own site-packages
+# only. So `uv pip install transformer-lens` decides torch is missing and pulls
+# a multi-gigabyte generic aarch64 wheel from PyPI, which then shadows the
+# NGC build. That wheel has no sm_121 kernels, so you end up with a slower,
+# broken torch that took twenty minutes to install.
+#
+# pip resolves against everything on sys.path, sees the image's torch, and
+# treats the requirement as satisfied. Verify the difference yourself with:
+#   uv pip install --dry-run pandas          # plans to download numpy
+#   $VENV/bin/python -m pip install --dry-run pandas   # installs nothing
+#
+# No --quiet: a dependency tree like transformer-lens can take minutes, and
+# silence is indistinguishable from a hang.
+"$VENV/bin/python" -m pip install ipykernel "$@"
 
 "$VENV/bin/python" -m ipykernel install \
     --user \
