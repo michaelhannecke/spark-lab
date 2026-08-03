@@ -1,5 +1,11 @@
 # spark-lab — disposable JupyterLab for DGX Spark (GB10)
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.yml)
+[![JupyterLab](https://img.shields.io/badge/JupyterLab-4.4-F37626?logo=jupyter&logoColor=white)](https://jupyterlab.readthedocs.io/)
+[![CUDA](https://img.shields.io/badge/CUDA-13-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-toolkit)
+[![Platform](https://img.shields.io/badge/platform-DGX%20Spark%20GB10%20(sm__121%2C%20aarch64)-76B900)](https://www.nvidia.com/en-us/products/workstations/dgx-spark/)
+
 A containerized JupyterLab for the Spark, built so that `pip install` in a notebook
 can never reach DGX OS. Two layers of isolation:
 
@@ -9,6 +15,8 @@ can never reach DGX OS. Two layers of isolation:
    env under `/opt/venvs`, created with `--system-site-packages` so it inherits
    torch/cuDNN/NCCL from the image instead of pulling a 3 GB wheel that would
    likely be built for the wrong arch. Trash one env without touching the others.
+
+![The second boundary: one env per experiment](data/diagram-2-venv-model.png)
 
 ---
 
@@ -183,6 +191,8 @@ means a fresh env is a few MB, not gigabytes.
 
 ## What persists where
 
+![Where the files actually live](data/diagram-1-storage-layers.png)
+
 | Path in container | Backing | Survives `down` | Survives `down -v` |
 |---|---|---|---|
 | `/workspace` | bind-mount `./notebooks` | yes | yes |
@@ -245,3 +255,9 @@ print(torch.cuda.is_available(), torch.cuda.get_device_name(0))
 print(torch.cuda.get_device_capability(0))   # expect (12, 1) on GB10
 x = torch.randn(8192, 8192, device="cuda"); print((x @ x).sum().item())
 ```
+
+---
+
+## License
+
+Released under the [MIT License](LICENSE). © 2026 Michael Hannecke.
