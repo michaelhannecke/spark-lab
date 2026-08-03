@@ -42,10 +42,25 @@ RUN pip install --no-cache-dir \
 
 # Non-root user whose UID/GID match the host account that owns ./notebooks,
 # so bind-mounted files don't come back owned by root.
-RUN if ! getent group "${DEV_GID}" >/dev/null; then groupadd -g "${DEV_GID}" "${DEV_USER}"; fi \
- && if ! getent passwd "${DEV_UID}" >/dev/null; then \
+#
+# NOTE: Ubuntu 24.04 base images (which NGC builds on) already ship a user
+# named `ubuntu` at UID 1000. We evict whoever holds the target UID/GID first,
+# then create ours. The trailing `id` is a build-time assertion -- without it a
+# failure here stays silent until `docker compose up` dies with
+# "unable to find user dev: no matching entries in passwd file".
+RUN set -eux; \
+    if getent passwd "${DEV_UID}" >/dev/null; then \
+        old_user="$(getent passwd "${DEV_UID}" | cut -d: -f1)"; \
+        if [ "$old_user" != "${DEV_USER}" ]; then userdel -r "$old_user" || userdel "$old_user"; fi; \
+    fi; \
+    if getent group "${DEV_GID}" >/dev/null; then \
+        old_group="$(getent group "${DEV_GID}" | cut -d: -f1)"; \
+        if [ "$old_group" != "${DEV_USER}" ]; then groupdel "$old_group" || true; fi; \
+    fi; \
+    getent group "${DEV_GID}" >/dev/null || groupadd -g "${DEV_GID}" "${DEV_USER}"; \
+    getent passwd "${DEV_UID}" >/dev/null || \
         useradd -m -u "${DEV_UID}" -g "${DEV_GID}" -s /bin/bash "${DEV_USER}"; \
-    fi
+    id "${DEV_USER}"
 
 # Every one of these is backed by a named volume in docker-compose.yml.
 # Creating them here (owned by dev) makes Docker seed the volumes with the

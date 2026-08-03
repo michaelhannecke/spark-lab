@@ -69,19 +69,78 @@ docker compose up -d
 docker compose logs -f lab    # wait for "Jupyter Server ... is running"
 ```
 
-Open it from the Mac Studio:
+---
+
+## Reaching it from another machine
+
+Two binds in the chain -- conflating them is the usual source of confusion:
 
 ```
-http://<spark-hostname-or-ip>:8888/lab?token=<JUPYTER_TOKEN from .env>
+[Jupyter] --> [container :8888] --> [Spark BIND_ADDR:HOST_PORT] --> [laptop]
+ --ip=0.0.0.0                        set in .env
+ (Dockerfile, always 0.0.0.0,        (the actual security decision)
+  not a security setting)
 ```
 
-Prefer not to put it on the LAN? Set `BIND_ADDR=127.0.0.1` in `.env`, `compose up -d`,
-and tunnel from the Mac:
+`--ip=0.0.0.0` inside the container means "all interfaces of the container", a
+namespace nothing can route to. Set it to 127.0.0.1 and the published port has
+nothing to forward to.
+
+**Option A -- LAN.** `BIND_ADDR=0.0.0.0` in `.env`, then:
+
+```
+http://spark-01.local:8888/lab?token=<token>
+```
+
+Token is the only gate and it crosses the wire in clear HTTP. Fine on a trusted
+home LAN; not fine anywhere with guest wifi or unmanaged devices.
+
+**Option B -- SSH tunnel (preferred).** `BIND_ADDR=127.0.0.1`, so the port exists
+only on the Spark's loopback. Then from the laptop:
 
 ```bash
-ssh -N -L 8888:localhost:8888 michael@<spark>
-# then http://localhost:8888/lab?token=...
+ssh -N -L 8888:127.0.0.1:8888 michael@spark-01.local
+# -N            no remote command, just the tunnel
+# left  8888    port opened on YOUR machine
+# 127.0.0.1:8888  destination as resolved ON THE SPARK -- use the literal IP,
+#                 NOT "localhost": that may resolve to ::1 on the Spark while
+#                 Docker published IPv4 only, and ssh reports no error at all.
+# spark-01.local  use the .local (mDNS) name from a Mac. Bare "spark-01" needs
+#                 your router to publish DHCP hostnames into DNS; many do not.
+# -> http://localhost:8888/lab?token=...
+
+Diagnostic worth memorising: `ssh -N` that WORKS produces no output and looks
+frozen. `ssh -N` that returns immediately to the prompt has failed -- almost
+always hostname resolution. Check with `ping spark-01` before debugging forwards.
 ```
+
+Nicer, via `~/.ssh/config` on the laptop:
+
+```
+Host spark-lab
+    HostName spark-01.local
+    User michael
+    LocalForward 8888 127.0.0.1:8888
+    ExitOnForwardFailure yes      # fail loudly if 8888 is already bound locally
+    ServerAliveInterval 30        # survive idle / sleep
+    ServerAliveCountMax 3
+```
+
+Then `ssh -N spark-lab` (or `ssh -fN` to background, `autossh -M 0 -fN` to survive
+sleep). With VS Code Remote-SSH, 8888 is auto-forwarded and no tunnel is needed.
+
+Token:
+
+```bash
+grep JUPYTER_TOKEN .env
+# or ask the running container:
+docker compose exec lab printenv JUPYTER_TOKEN
+```
+
+It is NOT in `docker compose logs`. Jupyter only prints a token-bearing URL when it
+generated the token itself; when the token comes from config/env it masks the value
+as a literal `token=...` (see the `# Don't log full token if it came from config`
+branch in jupyter_server/serverapp.py). The three dots are intentional, not a bug.
 
 ---
 

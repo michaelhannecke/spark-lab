@@ -159,11 +159,22 @@ RUN pip install --no-cache-dir \
         ipywidgets \
         uv
 
-# UID/GID match the host account that owns ./notebooks
-RUN if ! getent group "${DEV_GID}" >/dev/null; then groupadd -g "${DEV_GID}" "${DEV_USER}"; fi \
- && if ! getent passwd "${DEV_UID}" >/dev/null; then \
+# UID/GID match the host account that owns ./notebooks.
+# Ubuntu 24.04 (which NGC builds on) already ships a `ubuntu` user at UID 1000,
+# so evict the incumbent first. The trailing `id` is a build-time assertion.
+RUN set -eux; \
+    if getent passwd "${DEV_UID}" >/dev/null; then \
+        old_user="$(getent passwd "${DEV_UID}" | cut -d: -f1)"; \
+        if [ "$old_user" != "${DEV_USER}" ]; then userdel -r "$old_user" || userdel "$old_user"; fi; \
+    fi; \
+    if getent group "${DEV_GID}" >/dev/null; then \
+        old_group="$(getent group "${DEV_GID}" | cut -d: -f1)"; \
+        if [ "$old_group" != "${DEV_USER}" ]; then groupdel "$old_group" || true; fi; \
+    fi; \
+    getent group "${DEV_GID}" >/dev/null || groupadd -g "${DEV_GID}" "${DEV_USER}"; \
+    getent passwd "${DEV_UID}" >/dev/null || \
         useradd -m -u "${DEV_UID}" -g "${DEV_GID}" -s /bin/bash "${DEV_USER}"; \
-    fi
+    id "${DEV_USER}"
 
 RUN mkdir -p /opt/venvs /opt/jupyter-data /opt/jupyter-config \
              /opt/caches/{pip,uv,hf,torch} /workspace \
@@ -201,6 +212,14 @@ Four decisions in there are load-bearing:
 **The `mkdir` and `chown` before the volumes exist.** Docker seeds an empty named volume from whatever is at that path in the image, ownership included. Create the directories owned by `dev` at build time and the volumes come up writable by `dev` on first run. Skip it and you spend an hour wondering why `newenv` gets permission denied.
 
 **`USER dev` with a matching host UID.** Bind-mounted files carry numeric ownership across the boundary, not names. If the container writes as root, your notebooks come back root-owned on the host and every subsequent `git commit` needs `sudo`. Matching UID 1000 makes the boundary invisible.
+
+The eviction dance above is not defensive padding. **Ubuntu 24.04 — which the NGC images build on — ships a user named `ubuntu` already sitting at UID 1000.** A naive `if ! getent passwd 1000; then useradd ...; fi` sees the slot occupied, skips creation, and produces an image that builds perfectly and then dies on first start with:
+
+```
+Error response from daemon: unable to find user dev: no matching entries in passwd file
+```
+
+Which is why the block ends with a bare `id "${DEV_USER}"`. It costs nothing and it converts a silent build-time no-op into a loud build-time failure. Any Dockerfile step whose success is conditional deserves one — the expensive failures are the ones that wait until runtime to surface.
 
 It also has a pleasant side effect: as a non-root user you *cannot* pip install into the image's `dist-packages`. The design enforces itself.
 
@@ -263,7 +282,7 @@ services:
       stack: 67108864
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8888/api/status"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8888/api"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -287,6 +306,8 @@ volumes:
 `PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True` earns its place on this machine specifically. GB10 uses unified LPDDR5X shared between CPU and GPU. Notebook sessions where you load and reload models repeatedly are exactly the fragmentation-heavy pattern expandable segments were built for.
 
 `restart: unless-stopped` deserves a note, because it interacts with the storage model in a way that surprises people. It restarts the container, it does not recreate it. So an ad-hoc `pip install` in the container's writable layer survives a reboot. Usually convenient. Occasionally the reason a colleague cannot reproduce your notebook.
+
+The **healthcheck target is deliberate, and the obvious choice is wrong.** `GET /api/status` looks like the natural health endpoint and is decorated `@web.authenticated` — an unauthenticated curl gets a 403, `curl -f` exits non-zero, and the container sits in `unhealthy` forever while serving traffic perfectly. `GET /api` is the only endpoint carrying `@allow_unauthenticated` (its source comment: *"not authenticated, so give as few info as possible"*), which is exactly what a liveness probe wants. Note also `127.0.0.1` rather than `localhost` — Jupyter binds IPv4 only, and in a container where `localhost` resolves to `::1` first, a `localhost` healthcheck fails against a perfectly healthy server.
 
 The **top-level `volumes:` block** at the bottom is not decoration. Docker only manages a named volume you have declared, so every name used in the service's mount list has to appear there too. Omit one and Compose refuses to start with a fairly cryptic message about an undefined volume.
 
@@ -392,14 +413,6 @@ chmod +x ~/spark-lab/bin/*
 
 A note if you administer this box through **Portainer**: its UI calls Compose files "Stacks", and you can paste this YAML straight into the stack editor — but the `build:` block needs a build context Portainer can reach, so you would point the stack at a Git repository rather than pasting. Building from a pasted editor buffer has no directory to find the Dockerfile in. On the command line this problem does not exist, which is why I run it there.
 
-Reaching it from another machine on the LAN is a `BIND_ADDR` decision. `0.0.0.0` puts JupyterLab on your network with the token as the only gate — fine on a trusted home lab, and the reason the token is 32 random bytes rather than something memorable. If you would rather not, set `BIND_ADDR=127.0.0.1` and tunnel:
-
-```bash
-ssh -N -L 8888:localhost:8888 user@spark
-```
-
-I use `8888` deliberately, to stay clear of the DGX Dashboard on `11000` and the per-user JupyterLab ports it hands out. If you run both, keep them apart.
-
 Then, in a notebook, confirm the whole chain actually works end to end:
 
 ```python
@@ -409,6 +422,109 @@ print(torch.cuda.is_available(), torch.cuda.get_device_name(0))
 print(torch.cuda.get_device_capability(0))   # expect (12, 1) on GB10
 x = torch.randn(8192, 8192, device="cuda"); print((x @ x).sum().item())
 ```
+
+---
+
+## Reaching it from another machine
+
+There are **two** binds in this chain, and conflating them is where most people get stuck:
+
+```
+[Jupyter process] --> [container port] --> [Spark host port] --> [your laptop]
+    --ip=0.0.0.0          :8888           BIND_ADDR:HOST_PORT
+   set in Dockerfile                       set in .env
+```
+
+**Bind 1, inside the container**, is the `--ip=0.0.0.0` in the Dockerfile's `CMD`. This one is always `0.0.0.0` and it is *not* a security decision. "All interfaces" here means all interfaces of the container — a private network namespace nothing can route to from outside. Set it to `127.0.0.1` and the published port has nothing to forward to; you get connection-refused and a confusing afternoon. This is the single most common Jupyter-in-Docker mistake.
+
+**Bind 2, on the Spark**, is `BIND_ADDR`, which becomes `"${BIND_ADDR}:${HOST_PORT}:8888"` in the compose file. This is the security decision, and it is the only one.
+
+### Option A: put it on the LAN
+
+```bash
+# .env
+BIND_ADDR=0.0.0.0
+```
+
+```bash
+docker compose up -d
+hostname -I | awk '{print $1}'      # the Spark's LAN address
+```
+
+Then from any machine on the network:
+
+```
+http://spark-01.local:8888/lab?token=<token>
+http://192.168.1.42:8888/lab?token=<token>
+```
+
+The `.local` name is mDNS, which macOS resolves natively with no DNS configuration, and it survives DHCP moving the address around.
+
+What you are accepting: the token is the *entire* access control, and it travels over plain HTTP. On a home LAN behind one router that is a defensible call, and it is why the token is 32 random bytes rather than something memorable. On a network with guest wifi, IoT devices, or people you do not administer, it is not — the token is unguessable but perfectly readable to anything that can see the traffic, and whoever has it has arbitrary code execution on a machine with a GPU attached.
+
+### Option B: SSH tunnel
+
+```bash
+# .env
+BIND_ADDR=127.0.0.1
+```
+
+Now the published port exists only on the Spark's loopback interface. Nothing on the LAN can reach it — not with the token, not without.
+
+```bash
+ssh -N -L 8888:127.0.0.1:8888 michael@spark-01.local
+```
+
+Flag by flag, because the middle one is routinely misread:
+
+- **`-N`** — do not run a remote command. You want a tunnel, not a shell.
+- **`-L 8888:127.0.0.1:8888`** — a local forward. The left `8888` is the port opened **on your laptop**. The `127.0.0.1:8888` is the destination **as resolved on the Spark**. Your machine connects over SSH; the Spark then connects to its own loopback, which is exactly where Compose published the port.
+
+Then `http://localhost:8888/lab?token=...` on the laptop.
+
+**Write `127.0.0.1` there, not `localhost`.** Every tutorial on the internet writes `-L 8888:localhost:8888`, and on many hosts it works. On others it does not: `localhost` is resolved *on the Spark*, Ubuntu's `/etc/hosts` maps it to both `127.0.0.1` and `::1`, and Docker published the port on IPv4 only. If ssh tries `::1` first the forward is refused, and because the failure is on the remote side of an already-established connection, ssh reports nothing at all. You get a browser that says the site cannot be reached, a container that is demonstrably serving, and no error message anywhere. `ss -ltnp | grep 8888` on the Spark shows `127.0.0.1:8888` — IPv4 only — which is your tell.
+
+**Use the `.local` hostname, not the bare one.** From a Mac, `spark-01.local` resolves over mDNS/Bonjour, which macOS speaks natively. Bare `spark-01` depends on your router publishing DHCP hostnames into DNS, and plenty of consumer routers do not. The failure mode is worth memorising because it looks like nothing at all: **`ssh -N` returning immediately to the prompt instead of blocking is a hostname resolution failure**, not a forwarding problem. `ssh -N` that is working produces no output and appears frozen; `ssh -N` that returns instantly has already given up. If you spend an afternoon debugging port forwards, check that first — one `ping spark-01` settles it.
+
+You get encryption and key-based authentication for free, and the token demotes from sole gatekeeper to second factor. If 8888 is already taken locally, change only the left number: `-L 8889:127.0.0.1:8888`.
+
+### Making the tunnel bearable
+
+In `~/.ssh/config` on the laptop:
+
+```
+Host spark-lab
+    HostName spark-01.local
+    User michael
+    LocalForward 8888 127.0.0.1:8888
+    ExitOnForwardFailure yes
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+```
+
+Then `ssh -N spark-lab`, or `ssh -fN spark-lab` to background it.
+
+`ExitOnForwardFailure yes` matters more than it looks. Without it, if local 8888 is already bound, ssh connects cheerfully and prints a warning you will not read — and you spend ten minutes wondering why the browser is showing the *wrong* Jupyter. With it, ssh refuses to start and tells you why.
+
+`ServerAliveInterval` stops the tunnel dying silently on idle or laptop sleep. To survive sleep properly, `autossh -M 0 -fN spark-lab`.
+
+If you already work on the Spark through **VS Code Remote-SSH**, there is no third option to configure: VS Code auto-forwards 8888 as soon as something listens on it and puts a clickable link in the Ports panel. Same security properties as Option B, no manual tunnel.
+
+### Getting the token
+
+```bash
+grep JUPYTER_TOKEN ~/spark-lab/.env
+# or ask the running container:
+docker compose exec lab printenv JUPYTER_TOKEN
+```
+
+**Do not go looking for it in `docker compose logs`.** When Jupyter generates a token itself it prints a copy-pasteable URL containing it; when the token arrives from config or the environment — which is exactly what we are doing — it deliberately does not. Two gates in `jupyter_server/serverapp.py` enforce this: the banner block is guarded by `if self.identity_provider.token and self.identity_provider.token_generated`, and the URL builder masks the value with a comment that reads `# Don't log full token if it came from config`, substituting a literal `...`.
+
+That is the right call on Jupyter's part — logs get shipped to aggregators and pasted into bug reports — but it does mean the logs show you `http://…/lab?token=...` with three literal dots, which looks like a truncation bug the first time you see it. It is not.
+
+### On the port number
+
+`8888` is arbitrary but deliberate: the DGX Dashboard runs on `11000` and allocates per-user JupyterLab ports from `/opt/nvidia/dgx-dashboard-service/jupyterlab_ports.yaml`. If you run both, a collision produces genuinely confusing symptoms — the port answers, just not with the server you expected. Keep them in different ranges and you never have to diagnose that.
 
 ---
 

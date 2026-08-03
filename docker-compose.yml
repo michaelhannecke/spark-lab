@@ -61,7 +61,11 @@ services:
       stack: 67108864
 
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://localhost:8888/api/status"]
+      # GET /api is the only Jupyter endpoint marked @allow_unauthenticated.
+      # /api/status is @web.authenticated -> 403 without a token -> permanently
+      # "unhealthy". Use 127.0.0.1, not localhost: Jupyter binds IPv4 only and
+      # localhost may resolve to ::1 first.
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8888/api"]
       interval: 30s
       timeout: 5s
       retries: 3
