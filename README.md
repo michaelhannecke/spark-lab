@@ -6,6 +6,8 @@
 [![CUDA](https://img.shields.io/badge/CUDA-13-76B900?logo=nvidia&logoColor=white)](https://developer.nvidia.com/cuda-toolkit)
 [![Platform](https://img.shields.io/badge/platform-DGX%20Spark%20GB10%20(sm__121%2C%20aarch64)-76B900)](https://www.nvidia.com/en-us/products/workstations/dgx-spark/)
 
+![spark-lab — disposable JupyterLab for DGX Spark](data/spark-jupyter.jpg)
+
 A containerized JupyterLab for the Spark, built so that `pip install` in a notebook
 can never reach DGX OS. Two layers of isolation:
 
