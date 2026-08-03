@@ -8,7 +8,7 @@
 
 ![spark-lab — disposable JupyterLab for DGX Spark](data/spark-jupyter.jpg)
 
-( ** Full story for free on medium: ** https://medium.com/@michael.hannecke/maximum-isolation-a-disposable-jupyterlab-for-the-dgx-spark-b08b2a939da6 )
+**Full story for free on medium:** https://medium.com/@michael.hannecke/maximum-isolation-a-disposable-jupyterlab-for-the-dgx-spark-b08b2a939da6
 
 
 A containerized JupyterLab for the Spark, built so that `pip install` in a notebook
