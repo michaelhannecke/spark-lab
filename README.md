@@ -112,7 +112,7 @@ home LAN; not fine anywhere with guest wifi or unmanaged devices.
 only on the Spark's loopback. Then from the laptop:
 
 ```bash
-ssh -N -L 8888:127.0.0.1:8888 michael@spark-01.local
+ssh -N -L 8888:127.0.0.1:8888 spark-user@spark-01.local
 # -N            no remote command, just the tunnel
 # left  8888    port opened on YOUR machine
 # 127.0.0.1:8888  destination as resolved ON THE SPARK -- use the literal IP,
@@ -132,7 +132,7 @@ Nicer, via `~/.ssh/config` on the laptop:
 ```
 Host spark-lab
     HostName spark-01.local
-    User michael
+    User spark-user
     LocalForward 8888 127.0.0.1:8888
     ExitOnForwardFailure yes      # fail loudly if 8888 is already bound locally
     ServerAliveInterval 30        # survive idle / sleep
@@ -154,6 +154,55 @@ It is NOT in `docker compose logs`. Jupyter only prints a token-bearing URL when
 generated the token itself; when the token comes from config/env it masks the value
 as a literal `token=...` (see the `# Don't log full token if it came from config`
 branch in jupyter_server/serverapp.py). The three dots are intentional, not a bug.
+
+---
+
+## Day-to-day: start, connect, stop
+
+The first build is a one-off (see Quickstart). After that the container is just a
+service you bring up and put back down. All commands run **on the Spark, from the
+repo root** (`~/spark-lab`).
+
+**Start** — nothing changed since last time, just want it running:
+
+```bash
+docker compose up -d          # starts in the background, reuses the built image
+docker compose ps             # State "running" and healthy? you're up
+```
+
+`restart: unless-stopped` in the compose file means it also comes back on its own
+after a reboot — unless you explicitly `stop`ped it, in which case it stays down
+until you `up` again.
+
+**Connect** — two ways in:
+
+```bash
+# the notebook UI, from a browser (see "Reaching it from another machine" for the URL)
+#   http://localhost:8888/lab?token=<token>   via SSH tunnel
+#   http://spark-01.local:8888/lab?token=<token>   on the LAN
+
+# a shell inside the running container, for newenv/lsenv/rmenv or poking around
+docker compose exec lab bash
+```
+
+**Stop** — pick the one that matches how done you are:
+
+```bash
+docker compose stop           # pause it; container + all volumes kept, fastest to resume
+docker compose down           # remove the container; named volumes (envs, caches) survive
+docker compose down -v        # nuke it AND the volumes; only ./notebooks survives
+```
+
+Day to day you want `stop` (or just leave it running — it's idle when no kernel is
+busy). Reach for `down` when you want a clean container next boot; keep `-v` for
+when you deliberately want a blank slate (see [Blast radius](#blast-radius)).
+
+**Is it actually up?**
+
+```bash
+docker compose ps             # STATUS column shows (healthy) once the healthcheck passes
+docker compose logs -f lab    # follow startup; wait for "Jupyter Server ... is running"
+```
 
 ---
 
@@ -211,7 +260,7 @@ env and survive rebuilds. If you already have a populated HF cache on the host,
 swap that volume for a bind-mount and skip re-downloading:
 
 ```yaml
-      - /home/michael/.cache/huggingface:/opt/caches/hf
+      - /home/spark-user/.cache/huggingface:/opt/caches/hf
 ```
 
 ---

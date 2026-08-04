@@ -3,3 +3,4 @@ CLAUDE.md
 notebooks/*
 !notebooks/.gitkeep
 .ipynb_checkpoints/
+.DS_Store
