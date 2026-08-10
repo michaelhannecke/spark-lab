@@ -57,6 +57,9 @@ Two files do two different jobs, and it decides which command you need later:
 You never run the Dockerfile directly. Compose reads it via the `build: context: .`
 block. Change the Dockerfile -> `docker compose up -d --build` (minutes).
 Change only the YAML -> `docker compose up -d` (seconds, no rebuild).
+The `bin/` scripts are **copied into the image**, not bind-mounted, so editing one
+of them is a Dockerfile-side change too -> `docker compose up -d --build` before
+the running container sees it.
 
 `docker compose` looks for `docker-compose.yml` by that exact filename in the
 current directory, so keep the name.
@@ -217,6 +220,18 @@ lsenv                                                   # what exists, how fat
 rmenv scratch                                           # gone, kernel unregistered
 ```
 
+`lsenv` prints one line per env plus a footer for the HuggingFace model cache —
+that one is shared across every env (it lives at `HF_HOME`, not inside a venv),
+so it's reported once rather than as a per-env column:
+
+```
+NAME                       SIZE  PYTHON
+sae-probing                 14M  Python 3.12.3
+scratch                    4.2M  Python 3.12.3
+
+HuggingFace cache (/opt/caches/hf, shared): 318G
+```
+
 Reload the browser tab and the new kernel shows up in the launcher as
 `Python (sae-probing)`.
 
@@ -281,8 +296,9 @@ Caveats: create the directory owned by `DEV_UID:DEV_GID` before the first `up`
 (Docker creates a missing bind source as `root:root`); mount the cache *root*,
 never a `models--*` subdirectory, because `snapshots/` entries are symlinks into
 `blobs/`; and keep it on local NVMe, since `huggingface_hub` serializes
-concurrent downloads with `flock`. It's hundreds of GB of re-downloadable data —
-worth an exclude rule in whatever backs up the host.
+concurrent downloads with `flock`. It grows to hundreds of GB of re-downloadable
+data — `lsenv` reports the current size in its footer, and it's worth an exclude
+rule in whatever backs up the host.
 
 ---
 

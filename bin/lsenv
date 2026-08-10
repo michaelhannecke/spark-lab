@@ -4,6 +4,7 @@
 set -euo pipefail
 
 VENV_ROOT=${VENV_ROOT:-/opt/venvs}
+HF_HOME=${HF_HOME:-/opt/caches/hf}
 
 if [[ ! -d $VENV_ROOT ]] || [[ -z $(ls -A "$VENV_ROOT" 2>/dev/null) ]]; then
     echo "no envs yet -- create one with: newenv <name> [packages...]"
@@ -18,3 +19,10 @@ for venv in "$VENV_ROOT"/*/; do
     ver=$("${venv}bin/python" --version 2>&1)
     printf '%-24s %10s  %s\n' "$name" "$size" "$ver"
 done
+
+# HuggingFace model cache is shared across every env (HF_HOME), not per-env,
+# so report it once as a footer rather than as a column above.
+if [[ -d $HF_HOME ]]; then
+    hf_size=$(du -sh "$HF_HOME" 2>/dev/null | cut -f1)
+    printf '\nHuggingFace cache (%s, shared): %s\n' "$HF_HOME" "$hf_size"
+fi
