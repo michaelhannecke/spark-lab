@@ -52,6 +52,14 @@ services:
       - jupyter-config:/opt/jupyter-config
       # pip / uv / HuggingFace / torch.hub caches. Big, and worth keeping.
       - caches:/opt/caches
+      # HF model cache, overlaid on top of the volume above (Docker sorts mounts
+      # by path depth, so /opt/caches stays the volume and only .../hf is the
+      # bind). A host directory means one copy of every checkpoint shared with
+      # vLLM/TGI/any other HF-based container on this node, and it survives
+      # `down -v`. The dir must exist and be owned by DEV_UID:DEV_GID BEFORE the
+      # first `up` -- Docker creates a missing bind source as root:root, and the
+      # container then can't write it. See HF_CACHE_DIR in .env.example.
+      - ${HF_CACHE_DIR:-/srv/hf-cache}:/opt/caches/hf
 
     # DataLoader workers use /dev/shm. The 64 MB default will bite you.
     shm_size: "16gb"

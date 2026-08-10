@@ -253,15 +253,36 @@ means a fresh env is a few MB, not gigabytes.
 | `/opt/venvs` | named volume `venvs` | yes | no |
 | `/opt/jupyter-data` | named volume (kernelspecs) | yes | no |
 | `/opt/jupyter-config` | named volume (Lab UI state) | yes | no |
-| `/opt/caches` | named volume (pip/uv/HF/torch) | yes | no |
+| `/opt/caches` | named volume (pip/uv/torch) | yes | no |
+| `/opt/caches/hf` | bind-mount `$HF_CACHE_DIR` | yes | yes |
 
-`HF_HOME` points at `/opt/caches/hf`, so model downloads are shared across every
-env and survive rebuilds. If you already have a populated HF cache on the host,
-swap that volume for a bind-mount and skip re-downloading:
+`HF_HOME` points at `/opt/caches/hf`, which is a bind-mount rather than part of
+the `caches` volume — model downloads are shared across every env, survive
+rebuilds, survive `down -v`, and are visible on the host as ordinary files. Set
+the location with `HF_CACHE_DIR` in `.env` (default `/srv/hf-cache`).
+
+The point of a host directory is that other containers on this node can mount
+the same path and reuse the checkpoints instead of pulling their own copy. Give
+read-only consumers exactly that:
 
 ```yaml
-      - /home/spark-user/.cache/huggingface:/opt/caches/hf
+      - ${HF_CACHE_DIR:-/srv/hf-cache}:/opt/caches/hf:ro
+    environment:
+      HF_HOME: /opt/caches/hf
+      HF_HUB_OFFLINE: "1"
 ```
+
+One writer (this lab, where you deliberately pull models), N readers. Anything
+built on `huggingface_hub` picks the cache up from `HF_HOME` — vLLM, TGI, SGLang,
+`transformers`, `datasets`. Ollama and NVIDIA NIM containers do **not**: they
+keep their own model stores and need their own shared directories.
+
+Caveats: create the directory owned by `DEV_UID:DEV_GID` before the first `up`
+(Docker creates a missing bind source as `root:root`); mount the cache *root*,
+never a `models--*` subdirectory, because `snapshots/` entries are symlinks into
+`blobs/`; and keep it on local NVMe, since `huggingface_hub` serializes
+concurrent downloads with `flock`. It's hundreds of GB of re-downloadable data —
+worth an exclude rule in whatever backs up the host.
 
 ---
 
